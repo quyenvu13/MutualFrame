@@ -113,24 +113,21 @@ export async function readAttempts(baselineId, fromId, count) {
   const bid = Number(baselineId)
   const start = Number(fromId)
   const requested = Number(count)
-  const baseline = await readBaseline(bid)
-  const total = Number(baseline?.attempt_count || 0)
-  if (!Number.isFinite(start) || !Number.isFinite(requested) || start <= 0 || requested <= 0 || start > total) return []
+  if (!Number.isFinite(bid) || !Number.isFinite(start) || !Number.isFinite(requested) || bid <= 0 || start <= 0 || requested <= 0) return []
 
-  const expected = Math.min(requested, total - start + 1)
-
-  try {
-    const bulkRaw = await read('get_attempts', [bid, start, requested])
-    const bulk = normalizeListResult(bulkRaw)
-    if (Array.isArray(bulk) && bulk.length === expected) return bulk
-  } catch {
-    // Some StudioNet/SDK combinations do not surface list-return view methods reliably.
-    // Fall through to exact per-attempt reads, which use the same authoritative state.
-  }
-
+  // Prefer exact per-attempt reads. StudioNet/SDK list-return views have varied in
+  // shape across releases; get_attempt is a scalar-record view and is the most
+  // stable reviewer-facing path. It does not depend on a separate baseline counter read.
   const rows = []
-  for (let attemptId = start; attemptId < start + expected; attemptId += 1) {
-    rows.push(await readAttempt(bid, attemptId))
+  for (let attemptId = start; attemptId < start + requested; attemptId += 1) {
+    try {
+      rows.push(await readAttempt(bid, attemptId))
+    } catch (error) {
+      const message = cleanError(error).toLowerCase()
+      if (message.includes('invalid attempt id')) break
+      if (rows.length > 0) break
+      throw error
+    }
   }
   return rows
 }
