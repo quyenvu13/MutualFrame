@@ -65,6 +65,17 @@ const mainText = await readFile(resolve(root, 'src/main.js'), 'utf8')
 if (!mainText.includes("#auditLoadButton") || !mainText.includes('loadAttemptHistory')) {
   throw new Error('Attempt-log UI is not wired to the direct audit-history loader.')
 }
+if (!mainText.includes("state.selectedBaselineId = baselineInput.value.trim()") ||
+    !mainText.includes("state.auditFrom = fromInput.value.trim()") ||
+    !mainText.includes("state.auditCount = countInput.value.trim()")) {
+  throw new Error('Attempt-log inputs are not controlled by application state.')
+}
+const auditStart = mainText.indexOf('async function handleAudit()')
+const auditEnd = mainText.indexOf('async function inspectAttempt', auditStart)
+const auditHandler = mainText.slice(auditStart, auditEnd)
+if (!auditHandler.includes("String(state.selectedBaselineId || '').trim()") || auditHandler.includes('document.querySelector')) {
+  throw new Error('Attempt-log handler regressed to DOM-time input reads.')
+}
 const genlayerText = await readFile(resolve(root, 'src/genlayer.js'), 'utf8')
 if (genlayerText.includes("read('get_attempts'") || genlayerText.includes('normalizeListResult')) {
   throw new Error('Obsolete bulk attempt-list frontend path is still present.')

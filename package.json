@@ -1,6 +1,6 @@
 {
   "name": "mutualframe",
-  "version": "1.0.10",
+  "version": "1.0.7",
   "private": true,
   "type": "module",
   "scripts": {

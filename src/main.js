@@ -7,7 +7,7 @@ import {
   FROZEN_SOURCE_SHA256,
   NETWORK_LABEL,
   VERDICTS,
-} from './config.js?v=6'
+} from './config.js?v=7'
 import {
   cleanError,
   connectWallet,
@@ -20,12 +20,12 @@ import {
   submitWrite,
   txExplorerUrl,
   waitForAuthoritativeExecution,
-} from './genlayer.js?v=6'
+} from './genlayer.js?v=7'
 import {
   verifyProposalPostcondition,
   verifyRollbackPostcondition,
-} from './tx-truth.js?v=6'
-import { loadAttemptHistory } from './audit-history.js?v=6'
+} from './tx-truth.js?v=7'
+import { loadAttemptHistory } from './audit-history.js?v=7'
 
 const app = document.querySelector('#app')
 
@@ -396,6 +396,20 @@ function bindPage() {
   }
 
   if (state.route === 'audit') {
+    const baselineInput = document.querySelector('#auditBaselineId')
+    const fromInput = document.querySelector('#auditFrom')
+    const countInput = document.querySelector('#auditCount')
+
+    baselineInput?.addEventListener('input', () => {
+      state.selectedBaselineId = baselineInput.value.trim()
+    })
+    fromInput?.addEventListener('input', () => {
+      state.auditFrom = fromInput.value.trim()
+    })
+    countInput?.addEventListener('input', () => {
+      state.auditCount = countInput.value.trim()
+    })
+
     document.querySelector('#auditLoadButton')?.addEventListener('click', handleAudit)
     document.querySelectorAll('[data-attempt]').forEach((button) => button.addEventListener('click', () => inspectAttempt(button.dataset.attempt)))
   }
@@ -572,9 +586,12 @@ async function handleProposal(event) {
 }
 
 async function handleAudit() {
-  const baselineId = document.querySelector('#auditBaselineId')?.value
-  const from = n(document.querySelector('#auditFrom')?.value, 1)
-  const count = n(document.querySelector('#auditCount')?.value, 12)
+  // Audit inputs are controlled state. Do not re-query the DOM here: render()
+  // replaces the page tree, and stale DOM reads can produce a false empty ID.
+  const baselineId = String(state.selectedBaselineId || '').trim()
+  const from = n(state.auditFrom, 1)
+  const count = n(state.auditCount, 12)
+
   if (!baselineId || n(baselineId) <= 0) {
     state.auditError = 'Enter a valid baseline ID.'
     state.auditLoaded = false
@@ -582,7 +599,7 @@ async function handleAudit() {
     return
   }
 
-  state.selectedBaselineId = String(baselineId)
+  state.selectedBaselineId = baselineId
   state.auditFrom = from
   state.auditCount = count
   state.auditLoading = true
