@@ -1,0 +1,12 @@
+{
+  "name": "mutualframe",
+  "version": "1.0.5",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "verify": "npm run test && npm run build && node scripts/verify-package.mjs"
+  }
+}
