@@ -225,6 +225,6 @@ expected vs actual postcondition
 
 For every expected rollback retain the execution error/reason plus a post-rollback read proving the protected baseline state is unchanged.
 
-## Attempt-log read compatibility
+## Attempt-log read path
 
-The reviewer UI first calls `get_attempts`. If a StudioNet/SDK combination returns an unexpected list shape or the bulk view is unavailable, the UI deterministically falls back to `get_attempt(baseline_id, attempt_id)` for the exact on-chain range derived from `baseline.attempt_count`. This changes only frontend reading behavior; the frozen contract is unchanged.
+The reviewer UI reads `get_baseline(baseline_id)` first and treats its `attempt_count` as the authoritative upper bound. It then calls `get_attempt(baseline_id, attempt_id)` only for IDs that are known to exist in the requested range, loads them together, validates returned baseline/attempt IDs, and only then renders the history. The UI does not probe non-existent attempt IDs and does not depend on the bulk `get_attempts` response shape. This changes only frontend reading behavior; the frozen contract is unchanged.

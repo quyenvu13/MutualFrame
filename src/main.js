@@ -7,13 +7,12 @@ import {
   FROZEN_SOURCE_SHA256,
   NETWORK_LABEL,
   VERDICTS,
-} from './config.js?v=5'
+} from './config.js?v=6'
 import {
   cleanError,
   connectWallet,
   currentWallet,
   readAttempt,
-  readAttempts,
   readBaseline,
   readConfig,
   readGovernance,
@@ -21,11 +20,12 @@ import {
   submitWrite,
   txExplorerUrl,
   waitForAuthoritativeExecution,
-} from './genlayer.js?v=5'
+} from './genlayer.js?v=6'
 import {
   verifyProposalPostcondition,
   verifyRollbackPostcondition,
-} from './tx-truth.js?v=5'
+} from './tx-truth.js?v=6'
+import { loadAttemptHistory } from './audit-history.js?v=6'
 
 const app = document.querySelector('#app')
 
@@ -40,6 +40,9 @@ const state = {
   activeGovernance: null,
   auditFrom: 1,
   auditCount: 12,
+  auditLoading: false,
+  auditLoaded: false,
+  auditError: '',
   busy: false,
   tx: null,
   notice: null,
@@ -264,19 +267,30 @@ function renderBaselineCard(b) {
 }
 
 function auditPage() {
+  let body = `<div class="empty-card"><strong>No attempt data loaded.</strong><span>Choose a baseline and load its on-chain history.</span></div>`
+  if (state.auditLoading) {
+    body = `<div class="empty-card"><strong>Loading on-chain attempts…</strong><span>Reading the baseline count and exact attempt records.</span></div>`
+  } else if (state.auditError) {
+    body = `<div class="empty-card"><strong>Attempt history read failed.</strong><span>${h(state.auditError)}</span></div>`
+  } else if (state.auditLoaded && state.attempts.length === 0) {
+    body = `<div class="empty-card"><strong>No attempts in this range.</strong><span>The baseline was read successfully, but no attempt IDs exist in the requested range.</span></div>`
+  } else if (state.attempts.length) {
+    body = `<div class="attempt-table">${state.attempts.map(renderAttemptRow).join('')}</div>`
+  }
+
   return `
     <section class="page-heading compact-heading">
       <div><div class="eyebrow">AUDIT · ATTEMPT HISTORY</div><h1>Every gate result,<br><em>in order.</em></h1></div>
       <p>Inspect the append-only attempt log for a baseline. Cached classifications are disclosed per attempt; accepted candidates point to the governance version they created.</p>
     </section>
     <section class="audit-shell">
-      <form class="audit-controls" id="auditForm">
+      <div class="audit-controls" id="auditControls">
         <label>Baseline ID<input id="auditBaselineId" inputmode="numeric" min="1" value="${h(state.selectedBaselineId)}" placeholder="1" /></label>
         <label>From attempt<input id="auditFrom" inputmode="numeric" min="1" value="${h(state.auditFrom)}" /></label>
         <label>Count<input id="auditCount" inputmode="numeric" min="1" max="50" value="${h(state.auditCount)}" /></label>
-        <button class="button primary" type="submit">Load attempts</button>
-      </form>
-      ${state.attempts.length ? `<div class="attempt-table">${state.attempts.map(renderAttemptRow).join('')}</div>` : `<div class="empty-card"><strong>No attempt data loaded.</strong><span>Choose a baseline and load its on-chain history.</span></div>`}
+        <button class="button primary" id="auditLoadButton" type="button" ${state.auditLoading ? 'disabled' : ''}>${state.auditLoading ? 'Loading…' : 'Load attempts'}</button>
+      </div>
+      ${body}
     </section>`
 }
 
@@ -382,7 +396,7 @@ function bindPage() {
   }
 
   if (state.route === 'audit') {
-    document.querySelector('#auditForm')?.addEventListener('submit', handleAudit)
+    document.querySelector('#auditLoadButton')?.addEventListener('click', handleAudit)
     document.querySelectorAll('[data-attempt]').forEach((button) => button.addEventListener('click', () => inspectAttempt(button.dataset.attempt)))
   }
 }
@@ -557,25 +571,46 @@ async function handleProposal(event) {
   }
 }
 
-async function handleAudit(event) {
-  event.preventDefault()
+async function handleAudit() {
   const baselineId = document.querySelector('#auditBaselineId')?.value
   const from = n(document.querySelector('#auditFrom')?.value, 1)
   const count = n(document.querySelector('#auditCount')?.value, 12)
-  if (!baselineId || n(baselineId) <= 0) return
+  if (!baselineId || n(baselineId) <= 0) {
+    state.auditError = 'Enter a valid baseline ID.'
+    state.auditLoaded = false
+    render()
+    return
+  }
+
+  state.selectedBaselineId = String(baselineId)
+  state.auditFrom = from
+  state.auditCount = count
+  state.auditLoading = true
+  state.auditLoaded = false
+  state.auditError = ''
+  state.attempts = []
+  localStorage.setItem('mutualframe.baselineId', state.selectedBaselineId)
+  render()
 
   try {
-    state.selectedBaselineId = String(baselineId)
-    state.auditFrom = from
-    state.auditCount = count
-    localStorage.setItem('mutualframe.baselineId', state.selectedBaselineId)
-    state.attempts = await readAttempts(baselineId, from, count)
+    const loaded = await loadAttemptHistory(
+      { readBaseline, readAttempt },
+      baselineId,
+      from,
+      count,
+    )
+    state.baseline = loaded.baseline
+    state.attempts = loaded.items
+    state.auditLoaded = true
     state.notice = null
   } catch (error) {
     state.attempts = []
-    state.notice = { title: 'Attempt read failed', message: cleanError(error) }
+    state.auditLoaded = false
+    state.auditError = cleanError(error)
+  } finally {
+    state.auditLoading = false
+    render()
   }
-  render()
 }
 
 async function inspectAttempt(attemptId) {

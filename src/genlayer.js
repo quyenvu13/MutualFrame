@@ -88,47 +88,6 @@ export const readBaseline = (baselineId) => read('get_baseline', [Number(baselin
 export const readGovernance = (governanceId) => read('get_governance', [Number(governanceId)])
 export const readAttempt = (baselineId, attemptId) => read('get_attempt', [Number(baselineId), Number(attemptId)])
 
-export function normalizeListResult(value) {
-  if (Array.isArray(value)) return value
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    if (!trimmed) return []
-    try {
-      const parsed = JSON.parse(trimmed)
-      return Array.isArray(parsed) ? parsed : null
-    } catch {
-      return null
-    }
-  }
-  for (const key of ['result', 'data', 'returnValue', 'return_value']) {
-    if (value && Object.hasOwn(value, key)) {
-      const normalized = normalizeListResult(value[key])
-      if (normalized) return normalized
-    }
-  }
-  return null
-}
-
-export async function readAttempts(baselineId, fromId, count) {
-  const bid = Number(baselineId)
-  const start = Number(fromId)
-  const requested = Number(count)
-  if (!Number.isFinite(bid) || !Number.isFinite(start) || !Number.isFinite(requested) || bid <= 0 || start <= 0 || requested <= 0) return []
-
-  // Bound exact scalar reads by the authoritative baseline counter. This avoids
-  // probing a non-existent attempt id, which some StudioNet/SDK combinations may
-  // leave pending instead of returning a prompt UserError.
-  const baseline = await readBaseline(bid)
-  const total = Number(baseline?.attempt_count ?? 0)
-  if (!Number.isFinite(total) || total <= 0 || start > total) return []
-
-  const last = Math.min(total, start + requested - 1)
-  const rows = []
-  for (let attemptId = start; attemptId <= last; attemptId += 1) {
-    rows.push(await readAttempt(bid, attemptId))
-  }
-  return rows
-}
 
 async function estimateFees(client, call) {
   if (typeof client.estimateTransactionFeesForWrite !== 'function') return null

@@ -15,7 +15,7 @@ if (actualHash !== expectedHash) throw new Error(`Frozen source hash mismatch: $
 const required = [
   'index.html', 'package.json', 'vercel.json', 'README.md', 'TESTING.md',
   'MutualFrame-logo-512.png', 'contract/MutualFrame.py', 'src/config.js',
-  'src/main.js', 'src/genlayer.js', 'src/tx-truth.js', 'src/styles.css',
+  'src/main.js', 'src/genlayer.js', 'src/audit-history.js', 'src/tx-truth.js', 'src/styles.css',
   'dist/index.html', 'dist/src/main.js',
 ]
 for (const path of required) {
@@ -58,6 +58,16 @@ for (const file of await walk(root)) {
     if (raw.includes(term)) throw new Error(`Public-package provenance marker found in ${rel}`)
   }
   if (raw.includes(reservedContractAddress.toLowerCase())) throw new Error(`Reserved contract address leaked into Project package: ${rel}`)
+}
+
+
+const mainText = await readFile(resolve(root, 'src/main.js'), 'utf8')
+if (!mainText.includes("#auditLoadButton") || !mainText.includes('loadAttemptHistory')) {
+  throw new Error('Attempt-log UI is not wired to the direct audit-history loader.')
+}
+const genlayerText = await readFile(resolve(root, 'src/genlayer.js'), 'utf8')
+if (genlayerText.includes("read('get_attempts'") || genlayerText.includes('normalizeListResult')) {
+  throw new Error('Obsolete bulk attempt-list frontend path is still present.')
 }
 
 const configText = await readFile(resolve(root, 'src/config.js'), 'utf8')
