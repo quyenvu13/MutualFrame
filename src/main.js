@@ -7,7 +7,7 @@ import {
   FROZEN_SOURCE_SHA256,
   NETWORK_LABEL,
   VERDICTS,
-} from './config.js'
+} from './config.js?v=5'
 import {
   cleanError,
   connectWallet,
@@ -21,11 +21,11 @@ import {
   submitWrite,
   txExplorerUrl,
   waitForAuthoritativeExecution,
-} from './genlayer.js'
+} from './genlayer.js?v=5'
 import {
   verifyProposalPostcondition,
   verifyRollbackPostcondition,
-} from './tx-truth.js'
+} from './tx-truth.js?v=5'
 
 const app = document.querySelector('#app')
 
