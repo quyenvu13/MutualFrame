@@ -115,19 +115,17 @@ export async function readAttempts(baselineId, fromId, count) {
   const requested = Number(count)
   if (!Number.isFinite(bid) || !Number.isFinite(start) || !Number.isFinite(requested) || bid <= 0 || start <= 0 || requested <= 0) return []
 
-  // Prefer exact per-attempt reads. StudioNet/SDK list-return views have varied in
-  // shape across releases; get_attempt is a scalar-record view and is the most
-  // stable reviewer-facing path. It does not depend on a separate baseline counter read.
+  // Bound exact scalar reads by the authoritative baseline counter. This avoids
+  // probing a non-existent attempt id, which some StudioNet/SDK combinations may
+  // leave pending instead of returning a prompt UserError.
+  const baseline = await readBaseline(bid)
+  const total = Number(baseline?.attempt_count ?? 0)
+  if (!Number.isFinite(total) || total <= 0 || start > total) return []
+
+  const last = Math.min(total, start + requested - 1)
   const rows = []
-  for (let attemptId = start; attemptId < start + requested; attemptId += 1) {
-    try {
-      rows.push(await readAttempt(bid, attemptId))
-    } catch (error) {
-      const message = cleanError(error).toLowerCase()
-      if (message.includes('invalid attempt id')) break
-      if (rows.length > 0) break
-      throw error
-    }
+  for (let attemptId = start; attemptId <= last; attemptId += 1) {
+    rows.push(await readAttempt(bid, attemptId))
   }
   return rows
 }
