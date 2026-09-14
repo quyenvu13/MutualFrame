@@ -87,7 +87,53 @@ export const readConfig = () => read('get_config')
 export const readBaseline = (baselineId) => read('get_baseline', [Number(baselineId)])
 export const readGovernance = (governanceId) => read('get_governance', [Number(governanceId)])
 export const readAttempt = (baselineId, attemptId) => read('get_attempt', [Number(baselineId), Number(attemptId)])
-export const readAttempts = (baselineId, fromId, count) => read('get_attempts', [Number(baselineId), Number(fromId), Number(count)])
+
+export function normalizeListResult(value) {
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return []
+    try {
+      const parsed = JSON.parse(trimmed)
+      return Array.isArray(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+  for (const key of ['result', 'data', 'returnValue', 'return_value']) {
+    if (value && Object.hasOwn(value, key)) {
+      const normalized = normalizeListResult(value[key])
+      if (normalized) return normalized
+    }
+  }
+  return null
+}
+
+export async function readAttempts(baselineId, fromId, count) {
+  const bid = Number(baselineId)
+  const start = Number(fromId)
+  const requested = Number(count)
+  const baseline = await readBaseline(bid)
+  const total = Number(baseline?.attempt_count || 0)
+  if (!Number.isFinite(start) || !Number.isFinite(requested) || start <= 0 || requested <= 0 || start > total) return []
+
+  const expected = Math.min(requested, total - start + 1)
+
+  try {
+    const bulkRaw = await read('get_attempts', [bid, start, requested])
+    const bulk = normalizeListResult(bulkRaw)
+    if (Array.isArray(bulk) && bulk.length === expected) return bulk
+  } catch {
+    // Some StudioNet/SDK combinations do not surface list-return view methods reliably.
+    // Fall through to exact per-attempt reads, which use the same authoritative state.
+  }
+
+  const rows = []
+  for (let attemptId = start; attemptId < start + expected; attemptId += 1) {
+    rows.push(await readAttempt(bid, attemptId))
+  }
+  return rows
+}
 
 async function estimateFees(client, call) {
   if (typeof client.estimateTransactionFeesForWrite !== 'function') return null
