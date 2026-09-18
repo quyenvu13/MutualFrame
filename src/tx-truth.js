@@ -113,7 +113,36 @@ export function verifyRollbackPostcondition(before, after) {
     'attempt_count',
     'unilateral_power_blocks',
     'out_of_scope_blocks',
+    'model_calls',
+    'amendment_count',
+    'pending_amendment_id',
+    'effective_amendment_id',
+    'effective_version',
   ]
   const ok = keys.every((key) => String(before[key]) === String(after[key]))
   return { ok, message: ok ? 'Rollback confirmed: protected baseline state is unchanged.' : 'Rollback state changed unexpectedly.' }
+}
+
+export function verifyAmendmentProposalPostcondition(before, after, amendment, expectedText) {
+  if (!before || !after || !amendment) return { ok: false, message: 'Amendment postcondition data is incomplete.' }
+  const ok = Number(after.amendment_count) === Number(before.amendment_count) + 1
+    && Number(after.pending_amendment_id) === Number(amendment.amendment_id)
+    && Number(amendment.baseline_id) === Number(after.baseline_id)
+    && Number(amendment.governance_id) === Number(before.active_governance_id)
+    && Number(amendment.base_effective_version) === Number(before.effective_version)
+    && String(amendment.text) === String(expectedText)
+    && String(amendment.status) === 'PENDING'
+    && Number(after.effective_version) === Number(before.effective_version)
+  return { ok, message: ok ? 'Pending amendment is pinned to the current governance and effective version.' : 'Amendment-proposal state did not match every invariant.' }
+}
+
+export function verifyAmendmentApprovalPostcondition(before, after, amendment, approver) {
+  if (!before || !after || !amendment) return { ok: false, message: 'Approval postcondition data is incomplete.' }
+  const ok = String(amendment.status) === 'APPROVED'
+    && String(amendment.approved_by).toLowerCase() === String(approver).toLowerCase()
+    && Number(after.pending_amendment_id) === 0
+    && Number(after.effective_amendment_id) === Number(amendment.amendment_id)
+    && Number(after.effective_version) === Number(before.effective_version) + 1
+    && String(after.effective_text) === String(amendment.text)
+  return { ok, message: ok ? 'Counterparty approval advanced the effective version exactly once.' : 'Amendment-approval state did not match every invariant.' }
 }

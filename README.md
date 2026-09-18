@@ -1,122 +1,84 @@
-# MutualFrame
+# MutualFrame v1.4
 
-MutualFrame is a GenLayer dApp for registering governance clauses against an immutable baseline obligation while blocking unilateral future-change power and direct duty rewrites.
+MutualFrame is a StudioNet Intelligent Contract and browser Project for governing changes to an immutable baseline. A semantic verdict is load-bearing: only a genuine mutual-control clause unlocks amendment proposals, and only the baseline's immutable counterparty can make a concrete amendment effective.
 
-## Project identity
+## Deployment status
+
+| Item | Value |
+|---|---|
+| Network | StudioNet, chain ID `61999`, API v0.2 |
+| Contract file | `contract/MutualFrame.py` |
+| Python class | `UnilateralChangeGuard` |
+| Version | `1.4` |
+| Package revision | `1.4.1` |
+| Frozen LF source SHA-256 | `85aa2ace5b9cf1186743e9d710f58e4263709428e8ab690a3b664af33f78dfc1` |
+| Project address | `0x00B1cFb4cdd08A09097A5344668E1914031eb96F` |
+| Deploy status | `FINALIZED / SUCCESS / Accepted` |
+| Deployed-source parity | **PASS — exact SHA-256 match** |
+| Frontend URL | **PENDING — publish this configured build** |
+
+`src/config.js` is pinned to the StudioNet Project deployment above. The Explorer source hashes to the same frozen SHA-256 as `contract/MutualFrame.py`.
+
+## State machine
+
+1. The authority creates a baseline and binds a different counterparty.
+2. Only the authority may submit candidate governance clauses.
+3. Semantic consensus classifies the clause into one of three closed outcomes.
+4. Only mutual change control becomes active; the other two outcomes are logged and blocked.
+5. Active governance allows the authority to propose one concrete amendment.
+6. Only the immutable counterparty can approve it and advance `effective_version`.
+7. A newer accepted governance version makes an older pending amendment stale.
+
+There is no cancel, withdraw, replace, retry, or replay route for a pending or approved amendment.
+
+## Security boundary
+
+- User text is JSON-encoded before it enters the validator prompt.
+- Reserved verdict labels and the word `verdict` are rejected deterministically before any model call.
+- Cache keys normalize Unicode whitespace and case, and are scoped by `baseline_id`.
+- Fresh model calls are capped at 8 per baseline; cache hits do not consume the cap.
+- The original `baseline_text` never changes. Approved text is exposed separately as `effective_text`.
+- No global administrator and no deployer-only privilege exist.
+- This contract has no `emit_transfer` and accepts no native value.
+
+## Browser Project
+
+- `genlayer-js@1.1.8` and `viem` are bundled locally by esbuild; there is no runtime SDK CDN.
+- The browser switches to StudioNet `0xf22f` without installing a Snap.
+- Every write rechecks the wallet chain.
+- Both read and write clients use the same-origin `/api/rpc` proxy.
+- Success requires finalization, explicit execution success, and a matching state postcondition.
+- Text boxes apply a conservative 150 UTF-8-byte soft guard. The contract cap remains 4,000 characters.
+
+The exact calldata boundary is environment-dependent and has not yet been measured for this deployment. Run `npm run probe:calldata` and record the result before release.
+
+## Local commands
 
 ```text
-Project                  MutualFrame
-Contract class           UnilateralChangeGuard
-Contract version         1.3
-Network                  GenLayer StudioNet
-Project deployment       0xD106722B17ac4bb888A14a0e14114bD052Ca6105
-Frozen source SHA-256    675dcba2f55a34c4682d3f2ea05dae9fcb0d8620ceb620d1a1c13c3fef76e901
-```
-
-Explorer:
-
-```text
-https://explorer-studio.genlayer.com/address/0xD106722B17ac4bb888A14a0e14114bD052Ca6105
-```
-
-Project deploy transaction:
-
-```text
-0xb8350999a75a4b34eee3095fdafe7e3f7c0e6f5926e83dff5c7f995aedfd484c
-FINALIZED · GenVM SUCCESS · Accepted
-```
-
-The Project uses a fresh deployment address. The frozen implementation is kept under the product-facing filename `contract/MutualFrame.py`; the Python class and implementation remain `UnilateralChangeGuard` v1.3.
-
-## What the protocol does
-
-Each baseline records:
-
-- the creating wallet as its immutable authority;
-- the immutable baseline text;
-- the currently active governance version, if one exists;
-- governance-version and attempt counters;
-- unilateral-power and direct-rewrite block counters.
-
-Only the baseline authority may call `propose_governance`.
-
-The semantic classifier returns exactly one verdict:
-
-```text
-MUTUAL_CHANGE_CONTROL
-UNILATERAL_CHANGE_POWER
-OUT_OF_SCOPE_DIRECT_CHANGE
-```
-
-The contract then applies deterministic consequences:
-
-- `MUTUAL_CHANGE_CONTROL` creates and activates the next governance version;
-- `UNILATERAL_CHANGE_POWER` is rejected and increments the unilateral block counter;
-- `OUT_OF_SCOPE_DIRECT_CHANGE` is rejected and increments the out-of-scope counter.
-
-Malformed or non-convergent semantic output cannot create an attempt or governance version.
-
-## Frontend
-
-The browser application has five reviewer-facing areas:
-
-1. **Overview** — live configuration, semantic boundary and contract identity.
-2. **Create baseline** — empty-form immutable baseline creation.
-3. **Governance gate** — baseline inspection and semantic governance proposals.
-4. **Attempt log** — paginated on-chain history with cache disclosure.
-5. **Verification** — frozen source identity, execution-truth model and exact review path.
-
-The UI distinguishes transaction submission, finalization, execution result, and postcondition verification. If a finalized receipt does not expose execution status, it checks the authoritative leader receipt for up to 60 seconds. If execution still cannot be proven, the UI reports confirmation as delayed and does not present the action as successful.
-
-After a successful write, MutualFrame performs action-specific reads before showing a verified state. After an execution error, it refreshes the baseline and compares protected counters/state to surface rollback evidence.
-
-## Submission logo
-
-`MutualFrame-logo-512.png` is the 512×512 PNG asset intended for the submission form.
-
-## Local development
-
-No frontend dependency install is required. GenLayerJS is loaded in the browser from the pinned `1.1.8` ESM distribution.
-
-```bash
+npm ci
+npm test
+npm run build
+npm run verify
 npm run dev
 ```
 
-Open:
+The Python contract tests are launched through Node and detect `py -3`, `python`, or `python3`, so the same npm command works on Windows CMD and CI.
+
+## Calldata probe
+
+Set `CONTRACT_ADDRESS`, `PROBE_FROM`, `PROBE_COUNTERPARTY`, and optionally `PROBE_BASELINE_ID` before running:
 
 ```text
-http://localhost:4173
+npm run probe:calldata
 ```
 
-The local development server is implemented with Node.js; Python is not required on Windows.
+The probe calls `eth_estimateGas` for `create_baseline` and `propose_governance`; it never signs or sends a transaction.
 
-Run the project verifier:
+## Honest limitations
 
-```bash
-npm run verify
-```
+- Semantic consensus classifies change-control structure; it does not judge commercial fairness or prove off-chain compliance.
+- The deployment, Explorer availability, `get_config()` read, and deployed-source parity are verified. Three-wallet behavioral evidence, calldata limits, and hosted-frontend smoke remain pending.
+- Concurrent baseline creation can make the inferred newest ID ambiguous. The UI detects this with before/after counters and reports a postcondition mismatch instead of claiming success.
+- The 150-byte frontend guard is conservative until the fresh deployment is probed.
 
-`npm run verify` executes the transaction/postcondition unit tests, creates the production `dist/` bundle, verifies the exact frozen contract SHA-256, checks the pinned Project address, scans package hygiene, and confirms reviewer-facing files are present.
-
-## Vercel
-
-Import the repository as a static project.
-
-```text
-Build command: npm run build
-Output directory: dist
-```
-
-No private key or wallet secret belongs in Vercel. Wallet signing is performed by the user's EIP-1193 browser wallet.
-
-## Honest scope
-
-MutualFrame is a semantic governance registry gate. It does not:
-
-- execute later amendments;
-- collect bilateral signatures for a later amendment;
-- prove that off-chain parties complied with the registered governance rule;
-- decide whether a specific commercial amendment is fair;
-- verify external-world facts.
-
-A direct duty rewrite is deliberately treated as `OUT_OF_SCOPE_DIRECT_CHANGE` rather than being mislabeled as a mutual governance mechanism.
+See [TESTING.md](TESTING.md), [RUNTIME_EVIDENCE.md](RUNTIME_EVIDENCE.md), [LOCKED_SPEC.md](LOCKED_SPEC.md), and [SECURITY.md](SECURITY.md).

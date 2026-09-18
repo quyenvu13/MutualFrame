@@ -1,12 +1,20 @@
 {
   "name": "mutualframe",
-  "version": "1.0.7",
+  "version": "1.4.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/serve.mjs",
-    "test": "node --test tests/*.test.mjs",
+    "dev": "npm run build && node scripts/serve.mjs",
+    "test": "node --test tests/*.test.mjs && npm run test:contract",
+    "test:contract": "node scripts/run-python-tests.mjs",
+    "probe:calldata": "node tools/probe-calldata.mjs",
     "build": "node scripts/build.mjs",
     "verify": "npm run test && npm run build && node scripts/verify-package.mjs"
+  },
+  "dependencies": {
+    "genlayer-js": "1.1.8"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
   }
 }

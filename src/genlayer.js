@@ -1,3 +1,6 @@
+import { createClient } from 'genlayer-js'
+import { studionet } from 'genlayer-js/chains'
+import { TransactionStatus } from 'genlayer-js/types'
 import {
   CONTRACT_ADDRESS,
   CONTRACT_EXPLORER_URL,
@@ -8,25 +11,66 @@ import {
   rollbackReason,
 } from './tx-truth.js'
 
-let modulesPromise
+const STUDIONET_CHAIN_ID = 61999
+const STUDIONET_CHAIN_HEX = '0xf22f'
+const CANONICAL_RPC = 'https://studio.genlayer.com/api'
+
 let readClientPromise
 
-async function loadSdk() {
-  if (!modulesPromise) {
-    modulesPromise = Promise.all([
-      import('https://esm.unpkg.com/genlayer-js@1.1.8'),
-      import('https://esm.unpkg.com/genlayer-js@1.1.8/chains'),
-      import('https://esm.unpkg.com/genlayer-js@1.1.8/types'),
-    ]).then(([sdk, chains, types]) => ({ sdk, chains, types }))
+function proxyChain() {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:4173'
+  const proxy = `${origin}/api/rpc`
+  return {
+    ...studionet,
+    id: STUDIONET_CHAIN_ID,
+    rpcUrls: {
+      ...studionet.rpcUrls,
+      default: { http: [proxy] },
+      public: { http: [proxy] },
+    },
   }
-  return modulesPromise
 }
 
 async function getReadClient() {
   if (!readClientPromise) {
-    readClientPromise = loadSdk().then(({ sdk, chains }) => sdk.createClient({ chain: chains.studionet }))
+    readClientPromise = Promise.resolve(createClient({ chain: proxyChain() }))
   }
   return readClientPromise
+}
+
+export async function ensureStudioNet() {
+  if (!window.ethereum) throw new Error('MetaMask was not detected in this browser.')
+
+  const current = await window.ethereum.request({ method: 'eth_chainId' })
+  if (String(current).toLowerCase() === STUDIONET_CHAIN_HEX) return
+
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: STUDIONET_CHAIN_HEX }],
+    })
+  } catch (error) {
+    if (Number(error?.code) !== 4902) throw error
+    await window.ethereum.request({
+      method: 'wallet_addEthereumChain',
+      params: [{
+        chainId: STUDIONET_CHAIN_HEX,
+        chainName: 'GenLayer StudioNet',
+        nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 },
+        rpcUrls: [CANONICAL_RPC],
+        blockExplorerUrls: [EXPLORER_BASE],
+      }],
+    })
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: STUDIONET_CHAIN_HEX }],
+    })
+  }
+
+  const confirmed = await window.ethereum.request({ method: 'eth_chainId' })
+  if (String(confirmed).toLowerCase() !== STUDIONET_CHAIN_HEX) {
+    throw new Error('Wallet is not connected to GenLayer StudioNet (61999).')
+  }
 }
 
 export function shortAddress(value, left = 6, right = 4) {
@@ -53,17 +97,16 @@ export function cleanError(error) {
 
 export async function connectWallet() {
   if (!window.ethereum) throw new Error('MetaMask was not detected in this browser.')
+  await ensureStudioNet()
   const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
   const account = accounts?.[0]
   if (!account) throw new Error('No wallet account was returned.')
 
-  const { sdk, chains } = await loadSdk()
-  const client = sdk.createClient({
-    chain: chains.studionet,
+  const client = createClient({
+    chain: proxyChain(),
     account,
     provider: window.ethereum,
   })
-  await client.connect('studionet')
   return { account, client }
 }
 
@@ -87,41 +130,27 @@ export const readConfig = () => read('get_config')
 export const readBaseline = (baselineId) => read('get_baseline', [Number(baselineId)])
 export const readGovernance = (governanceId) => read('get_governance', [Number(governanceId)])
 export const readAttempt = (baselineId, attemptId) => read('get_attempt', [Number(baselineId), Number(attemptId)])
-
-
-async function estimateFees(client, call) {
-  if (typeof client.estimateTransactionFeesForWrite !== 'function') return null
-  try {
-    const estimate = await client.estimateTransactionFeesForWrite(call)
-    if (!estimate?.distribution || estimate?.feeValue == null) return null
-    return {
-      distribution: estimate.distribution,
-      feeValue: estimate.feeValue,
-    }
-  } catch {
-    return null
-  }
-}
+export const readAmendment = (baselineId, amendmentId) => read('get_amendment', [Number(baselineId), Number(amendmentId)])
 
 export async function submitWrite(client, functionName, args = []) {
-  const call = {
+  // SDK 1.1.8 skips its chain assertion for Studio chains. Recheck before
+  // every write; Snap is not required for eth_sendTransaction.
+  await ensureStudioNet()
+  return client.writeContract({
     address: CONTRACT_ADDRESS,
     functionName,
     args,
     value: 0n,
-  }
-  const fees = await estimateFees(client, call)
-  return client.writeContract(fees ? { ...call, fees } : call)
+  })
 }
 
 async function finalizedReceipt(hash) {
   const client = await getReadClient()
-  const { types } = await loadSdk()
 
-  if (typeof client.waitForTransactionReceipt === 'function' && types?.TransactionStatus?.FINALIZED != null) {
+  if (typeof client.waitForTransactionReceipt === 'function' && TransactionStatus?.FINALIZED != null) {
     return client.waitForTransactionReceipt({
       hash,
-      status: types.TransactionStatus.FINALIZED,
+      status: TransactionStatus.FINALIZED,
       interval: 5000,
       retries: 240,
       fullTransaction: true,

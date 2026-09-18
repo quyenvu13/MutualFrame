@@ -7,12 +7,13 @@ import {
   FROZEN_SOURCE_SHA256,
   NETWORK_LABEL,
   VERDICTS,
-} from './config.js?v=7'
+} from './config.js'
 import {
   cleanError,
   connectWallet,
   currentWallet,
   readAttempt,
+  readAmendment,
   readBaseline,
   readConfig,
   readGovernance,
@@ -20,12 +21,15 @@ import {
   submitWrite,
   txExplorerUrl,
   waitForAuthoritativeExecution,
-} from './genlayer.js?v=7'
+} from './genlayer.js'
 import {
+  verifyAmendmentApprovalPostcondition,
+  verifyAmendmentProposalPostcondition,
   verifyProposalPostcondition,
   verifyRollbackPostcondition,
-} from './tx-truth.js?v=7'
-import { loadAttemptHistory } from './audit-history.js?v=7'
+} from './tx-truth.js'
+import { loadAttemptHistory } from './audit-history.js'
+import { assertTextBudget, pyStrip, textBudget } from './text-boundary.js'
 
 const app = document.querySelector('#app')
 
@@ -38,6 +42,7 @@ const state = {
   baseline: null,
   attempts: [],
   activeGovernance: null,
+  pendingAmendment: null,
   auditFrom: 1,
   auditCount: 12,
   auditLoading: false,
@@ -89,6 +94,7 @@ function shell(content) {
   const accountLabel = state.account ? shortAddress(state.account, 8, 6) : 'Connect wallet'
   const count = state.config ? n(state.config.baseline_count) : '—'
   const versions = state.config ? n(state.config.governance_count) : '—'
+  const amendments = state.config ? n(state.config.amendment_count) : '—'
   return `
     <div class="app-shell">
       <aside class="sidebar">
@@ -116,7 +122,7 @@ function shell(content) {
               <a href="${CONTRACT_EXPLORER_URL}" target="_blank" rel="noreferrer">${shortAddress(CONTRACT_ADDRESS, 9, 7)}</a>
               <button class="copy-button" data-copy="${CONTRACT_ADDRESS}">copy</button>
             </div>
-            <div class="top-metrics"><span>${count} baselines</span><span>${versions} governance versions</span></div>
+            <div class="top-metrics"><span>${count} baselines</span><span>${versions} governance rules</span><span>${amendments} amendments</span></div>
             <button class="wallet-button ${state.account ? 'connected' : ''}" id="walletButton"><span class="wallet-dot"></span>${h(accountLabel)}</button>
           </div>
         </header>
@@ -159,7 +165,7 @@ function overviewPage() {
         </div>
       </div>
       <div class="hero-panel">
-        <div class="panel-top"><span>Baseline → governance</span><span class="mono">v1.3</span></div>
+        <div class="panel-top"><span>Baseline → governance → approval</span><span class="mono">v1.4</span></div>
         <div class="flow-row">
           <div class="flow-node baseline-node"><small>IMMUTABLE</small><strong>Original duty</strong><span>fixed comparison point</span></div>
           <div class="flow-arrow">→</div>
@@ -175,8 +181,8 @@ function overviewPage() {
     <section class="metric-strip">
       <article><small>LIVE CONTRACT</small><strong>${shortAddress(CONTRACT_ADDRESS, 8, 6)}</strong><span>${loadingCopy}</span></article>
       <article><small>BASELINES</small><strong>${config ? n(config.baseline_count) : '—'}</strong><span>immutable records</span></article>
-      <article><small>GOVERNANCE</small><strong>${config ? n(config.governance_count) : '—'}</strong><span>accepted versions</span></article>
-      <article><small>ATTEMPT CAP</small><strong>${config ? n(config.max_attempts_per_baseline) : '—'}</strong><span>per baseline</span></article>
+      <article><small>GOVERNANCE</small><strong>${config ? n(config.governance_count) : '—'}</strong><span>accepted rules</span></article>
+      <article><small>MODEL CALL CAP</small><strong>${config ? n(config.max_model_calls_per_baseline) : '—'}</strong><span>fresh calls per baseline</span></article>
     </section>
     <section class="two-column-cards">
       <article class="paper-card">
@@ -189,7 +195,7 @@ function overviewPage() {
       <article class="paper-card dark-card">
         <div class="section-index">02 — NOT AN ORACLE</div>
         <h2>The gate registers governance. It does not enforce the world.</h2>
-        <p>MutualFrame does not execute later amendments, collect two-party signatures for them, prove off-chain compliance, or decide whether a commercial amendment is fair.</p>
+        <p>MutualFrame makes approved amendments effective on-chain only after the immutable counterparty confirms them. It does not prove off-chain compliance, execute external systems, or decide whether a commercial amendment is fair.</p>
         <a href="#/verification">See verification boundary →</a>
       </article>
     </section>`
@@ -199,24 +205,27 @@ function createPage() {
   return `
     <section class="page-heading compact-heading">
       <div><div class="eyebrow">BASELINE · IMMUTABLE RECORD</div><h1>Set the thing<br><em>that must not drift.</em></h1></div>
-      <p>Creating a baseline records the connected wallet as its authority. The text is trimmed once and then becomes the fixed semantic comparison point for every governance proposal under that baseline.</p>
+      <p>Creating a baseline binds the connected authority and a different immutable counterparty. The original text stays fixed; later amendments become effective only after mutual governance and counterparty approval.</p>
     </section>
     <section class="form-layout">
       <form class="form-card" id="createBaselineForm">
-        <div class="form-card-head"><span>New baseline</span><span class="mono">max 4,000 chars</span></div>
+        <div class="form-card-head"><span>New baseline</span><span class="mono">StudioNet byte guard</span></div>
         <label for="baselineText">Immutable obligation</label>
-        <textarea id="baselineText" name="baselineText" rows="9" maxlength="4000" placeholder="Enter the original obligation…" required></textarea>
-        <div class="form-meta"><span id="baselineCount">0 / 4,000</span><span>${state.account ? `Authority ${shortAddress(state.account, 8, 6)}` : 'Connect a wallet to create'}</span></div>
+        <textarea id="baselineText" name="baselineText" rows="7" maxlength="4000" placeholder="Enter the original obligation…" required></textarea>
+        <div class="form-meta"><span id="baselineCount">0 / 150 UTF-8 bytes</span><span>${state.account ? `Authority ${shortAddress(state.account, 8, 6)}` : 'Connect a wallet to create'}</span></div>
+        <label for="counterpartyAddress">Immutable counterparty</label>
+        <input id="counterpartyAddress" name="counterpartyAddress" placeholder="0x…" maxlength="42" autocomplete="off" required />
+        <div class="form-meta"><span>Must be a different StudioNet wallet</span><span>Bound at creation</span></div>
         <button class="button primary full" type="submit" ${state.busy ? 'disabled' : ''}>Create immutable baseline <span>→</span></button>
       </form>
       <aside class="instruction-card">
         <div class="section-index">WHAT HAPPENS</div>
         <ol>
-          <li><span>1</span><p><b>Authority is fixed.</b> Only the creator wallet may propose governance for this baseline.</p></li>
+          <li><span>1</span><p><b>Both roles are fixed.</b> The creator proposes; the named counterparty alone approves concrete amendments.</p></li>
           <li><span>2</span><p><b>Text is immutable.</b> Future semantic comparisons always anchor to this original baseline.</p></li>
-          <li><span>3</span><p><b>No governance starts active.</b> A candidate must pass the mutual-control gate first.</p></li>
+          <li><span>3</span><p><b>No amendment starts enabled.</b> A governance clause must pass first, then each concrete amendment needs counterparty approval.</p></li>
         </ol>
-        <div class="boundary-note">No demo text is prefilled. The transaction uses exactly what you enter.</div>
+        <div class="boundary-note">No demo text is prefilled. The 150-byte UI guard is conservative; the contract cap remains 4,000 characters.</div>
       </aside>
     </section>`
 }
@@ -226,7 +235,7 @@ function governancePage() {
   return `
     <section class="page-heading compact-heading">
       <div><div class="eyebrow">CHANGE · SEMANTIC GATE</div><h1>Who controls<br><em>the next change?</em></h1></div>
-      <p>Load a baseline, then submit a candidate governance clause. The candidate must itself define how future material changes become applicable; a direct rewrite is deliberately out of scope.</p>
+      <p>First activate a genuine mutual-control rule. Then the authority may propose a concrete amendment, but only the immutable counterparty can make it effective.</p>
     </section>
     <section class="workspace-grid">
       <div class="workspace-main">
@@ -238,32 +247,56 @@ function governancePage() {
         <form class="proposal-card" id="proposalForm">
           <div class="form-card-head"><span>Candidate governance clause</span><span class="mono">semantic write</span></div>
           <textarea id="candidateClause" rows="7" maxlength="4000" placeholder="Describe the mechanism that controls future material changes…" required ${b ? '' : 'disabled'}></textarea>
-          <div class="proposal-foot"><span>Compared to baseline #${b ? h(b.baseline_id) : '—'}</span><button class="button primary" type="submit" ${!b || state.busy ? 'disabled' : ''}>Run governance gate <span>→</span></button></div>
+          <div class="form-meta"><span id="candidateCount">0 / 150 UTF-8 bytes</span><span>Compared to original baseline #${b ? h(b.baseline_id) : '—'}</span></div>
+          <div class="proposal-foot"><span>Fresh model calls: ${b ? `${n(b.model_calls)} / 8` : '—'}</span><button class="button primary" type="submit" ${!b || state.busy ? 'disabled' : ''}>Run governance gate <span>→</span></button></div>
         </form>
+        ${b ? renderAmendmentPanel(b) : ''}
       </div>
       <aside class="verdict-legend">
         <div class="section-index">THREE OUTCOMES</div>
-        <div class="legend-row good"><i>↔</i><div><strong>Mutual control</strong><span>Activates a new governance version.</span></div></div>
+        <div class="legend-row good"><i>↔</i><div><strong>Mutual control</strong><span>Enables proposals; counterparty approval still controls effect.</span></div></div>
         <div class="legend-row bad"><i>→</i><div><strong>Unilateral power</strong><span>Blocked and counted. Active governance stays unchanged.</span></div></div>
         <div class="legend-row warn"><i>×</i><div><strong>Direct rewrite</strong><span>Blocked as outside this contract’s governance scope.</span></div></div>
-        <div class="boundary-note">If a finalized receipt does not expose execution status, MutualFrame checks the authoritative leader receipt before showing success.</div>
+        <div class="boundary-note">No Snap is required. Every write checks chain 61999, waits for leader execution evidence, then verifies contract postconditions.</div>
       </aside>
     </section>`
 }
 
 function renderBaselineCard(b) {
   const isAuthority = state.account && String(state.account).toLowerCase() === String(b.authority).toLowerCase()
+  const isCounterparty = state.account && String(state.account).toLowerCase() === String(b.counterparty).toLowerCase()
+  const role = isAuthority ? 'You are the authority' : isCounterparty ? 'You are the counterparty' : 'Read-only observer'
   return `<article class="baseline-card">
-    <div class="baseline-head"><div><small>BASELINE #${h(b.baseline_id)}</small><strong>${isAuthority ? 'You are the authority' : 'Read-only observer'}</strong></div><span class="status-pill ${isAuthority ? 'good' : ''}">${shortAddress(b.authority, 8, 6)}</span></div>
-    <blockquote>${h(b.baseline_text)}</blockquote>
+    <div class="baseline-head"><div><small>BASELINE #${h(b.baseline_id)}</small><strong>${role}</strong></div><span class="status-pill ${isAuthority || isCounterparty ? 'good' : ''}">${shortAddress(b.authority, 8, 6)} ↔ ${shortAddress(b.counterparty, 8, 6)}</span></div>
+    <div class="text-pair"><div><small>IMMUTABLE ORIGINAL</small><blockquote>${h(b.baseline_text)}</blockquote></div><div><small>EFFECTIVE TEXT · V${n(b.effective_version)}</small><blockquote>${h(b.effective_text)}</blockquote></div></div>
     <div class="baseline-stats">
-      <span><small>ACTIVE VERSION</small><b>${n(b.active_version)}</b></span>
+      <span><small>GOVERNANCE V</small><b>${n(b.active_version)}</b></span>
+      <span><small>EFFECTIVE V</small><b>${n(b.effective_version)}</b></span>
       <span><small>ATTEMPTS</small><b>${n(b.attempt_count)}</b></span>
+      <span><small>MODEL CALLS</small><b>${n(b.model_calls)}</b></span>
       <span><small>UNILATERAL BLOCKS</small><b>${n(b.unilateral_power_blocks)}</b></span>
       <span><small>DIRECT BLOCKS</small><b>${n(b.out_of_scope_blocks)}</b></span>
     </div>
     ${b.active_governance_text ? `<div class="active-rule"><small>ACTIVE GOVERNANCE</small><p>${h(b.active_governance_text)}</p></div>` : `<div class="active-rule empty"><small>ACTIVE GOVERNANCE</small><p>No governance clause has been activated yet.</p></div>`}
   </article>`
+}
+
+function renderAmendmentPanel(b) {
+  const pending = state.pendingAmendment
+  const isAuthority = state.account && String(state.account).toLowerCase() === String(b.authority).toLowerCase()
+  const isCounterparty = state.account && String(state.account).toLowerCase() === String(b.counterparty).toLowerCase()
+  return `<section class="amendment-panel">
+    <div class="form-card-head"><span>Concrete amendment</span><span class="mono">deterministic consequence</span></div>
+    ${pending ? `<article class="pending-amendment">
+      <div><small>PENDING #${h(pending.amendment_id)} · pinned to governance #${h(pending.governance_id)}</small><p>${h(pending.text)}</p></div>
+      <button class="button primary" id="approveAmendmentButton" type="button" ${!isCounterparty || state.busy ? 'disabled' : ''}>Approve as counterparty →</button>
+    </article>` : `<form id="amendmentForm">
+      <textarea id="amendmentText" rows="5" maxlength="4000" placeholder="Enter the concrete replacement text…" required ${!isAuthority || n(b.active_governance_id) === 0 ? 'disabled' : ''}></textarea>
+      <div class="form-meta"><span id="amendmentCount">0 / 150 UTF-8 bytes</span><span>${n(b.active_governance_id) > 0 ? 'Pinned to current governance + effective version' : 'Activate mutual governance first'}</span></div>
+      <button class="button primary full" type="submit" ${!isAuthority || n(b.active_governance_id) === 0 || state.busy ? 'disabled' : ''}>Propose amendment for counterparty approval →</button>
+    </form>`}
+    <div class="boundary-note">Pending amendments cannot be cancelled, withdrawn or replaced. A newer accepted governance rule makes the old pending amendment stale.</div>
+  </section>`
 }
 
 function auditPage() {
@@ -313,7 +346,7 @@ function verificationPage() {
     </section>
     <section class="verification-grid">
       <article class="verify-card featured">
-        <small>PROJECT DEPLOYMENT</small>
+        <small>PROJECT DEPLOYMENT · PENDING</small>
         <strong>${CONTRACT_ADDRESS}</strong>
         <div class="verify-line"><span>Network</span><b>${NETWORK_LABEL}</b></div>
         <div class="verify-line"><span>Contract class</span><b>${CONTRACT_CLASS}</b></div>
@@ -332,20 +365,22 @@ function verificationPage() {
       </article>
       <article class="verify-card">
         <small>HONEST SCOPE</small>
-        <p>MutualFrame registers which governance clause is active for an immutable baseline. It does not collect later bilateral signatures, execute amendments, prove off-chain compliance, or verify external facts.</p>
+        <p>MutualFrame registers an active mutual-control clause and makes a concrete amendment effective only after the immutable counterparty approves it on-chain. It does not prove off-chain compliance, assess commercial fairness, execute external systems, or verify external facts.</p>
       </article>
     </section>
     <section class="review-path paper-card">
       <div class="section-index">EXACT REVIEW PATH</div>
       <ol>
-        <li>Open the Project deployment and confirm GenVM deploy execution succeeded.</li>
-        <li>Load <code>get_config()</code>: version 1.3, three closed semantic verdicts.</li>
-        <li>Create an empty-state baseline from the connected authority wallet.</li>
-        <li>Submit one unilateral future-change clause and verify it is blocked.</li>
-        <li>Submit one mutual future-change clause and verify version 1 activates.</li>
-        <li>Submit a direct rewrite and verify active governance remains unchanged.</li>
-        <li>Repeat the unilateral candidate and verify <code>used_cache = true</code>.</li>
-        <li>Switch wallets and verify outsider proposal rolls back with unchanged state.</li>
+        <li>Deploy the frozen v1.4 source; confirm GenVM execution succeeds.</li>
+        <li>Load <code>get_config()</code>; confirm v1.4 and the model-call cap of 8.</li>
+        <li>Create a baseline with a different immutable counterparty.</li>
+        <li>Try an amendment before governance; confirm same-call rollback.</li>
+        <li>Submit a one-sided change rule; confirm it is blocked.</li>
+        <li>Submit a true two-party rule; confirm governance v1 activates.</li>
+        <li>Authority proposes an amendment; outsider approval must roll back.</li>
+        <li>Counterparty approves the same amendment; confirm effective v1.</li>
+        <li>Repeat a whitespace/case variant; confirm cache reuse.</li>
+        <li>Create another pending amendment, then activate newer governance; confirm stale.</li>
       </ol>
     </section>`
 }
@@ -385,7 +420,7 @@ function bindPage() {
     const textarea = document.querySelector('#baselineText')
     textarea?.addEventListener('input', () => {
       const counter = document.querySelector('#baselineCount')
-      if (counter) counter.textContent = `${textarea.value.length.toLocaleString()} / 4,000`
+      if (counter) counter.textContent = textBudget(textarea.value).message
     })
     document.querySelector('#createBaselineForm')?.addEventListener('submit', handleCreateBaseline)
   }
@@ -393,6 +428,18 @@ function bindPage() {
   if (state.route === 'governance') {
     document.querySelector('#baselineLookupForm')?.addEventListener('submit', handleLoadBaseline)
     document.querySelector('#proposalForm')?.addEventListener('submit', handleProposal)
+    const candidate = document.querySelector('#candidateClause')
+    candidate?.addEventListener('input', () => {
+      const counter = document.querySelector('#candidateCount')
+      if (counter) counter.textContent = textBudget(candidate.value).message
+    })
+    const amendment = document.querySelector('#amendmentText')
+    amendment?.addEventListener('input', () => {
+      const counter = document.querySelector('#amendmentCount')
+      if (counter) counter.textContent = textBudget(amendment.value).message
+    })
+    document.querySelector('#amendmentForm')?.addEventListener('submit', handleProposeAmendment)
+    document.querySelector('#approveAmendmentButton')?.addEventListener('click', handleApproveAmendment)
   }
 
   if (state.route === 'audit') {
@@ -430,15 +477,19 @@ async function handleWallet() {
 async function handleCreateBaseline(event) {
   event.preventDefault()
   const text = document.querySelector('#baselineText')?.value || ''
-  if (!text.trim()) return
+  const counterparty = document.querySelector('#counterpartyAddress')?.value || ''
+  if (!pyStrip(text)) return
 
   try {
+    assertTextBudget(text, 'Baseline')
+    if (!/^0x[0-9a-fA-F]{40}$/.test(counterparty)) throw new Error('Enter a valid counterparty address.')
     state.busy = true
     render()
     const { account, client } = await connectWallet()
     state.account = account
+    if (counterparty.toLowerCase() === account.toLowerCase()) throw new Error('Counterparty must differ from the connected authority wallet.')
     const beforeConfig = await readConfig()
-    const hash = await submitWrite(client, 'create_baseline', [text])
+    const hash = await submitWrite(client, 'create_baseline', [text, counterparty])
     state.tx = { phase: 'submitted', label: 'Create baseline', title: 'Transaction submitted', message: 'Waiting for finalization before reading the new baseline.', hash }
     render()
 
@@ -462,9 +513,12 @@ async function handleCreateBaseline(event) {
     const expectedId = n(beforeConfig.baseline_count) + 1
     const postOk = newId === expectedId
       && String(baseline.authority).toLowerCase() === String(account).toLowerCase()
-      && String(baseline.baseline_text) === text.trim()
+      && String(baseline.counterparty).toLowerCase() === counterparty.toLowerCase()
+      && String(baseline.baseline_text) === pyStrip(text)
       && n(baseline.attempt_count) === 0
       && n(baseline.version_count) === 0
+      && n(baseline.model_calls) === 0
+      && n(baseline.effective_version) === 0
 
     state.config = afterConfig
     state.selectedBaselineId = String(newId)
@@ -503,6 +557,11 @@ async function loadBaseline(id, rerender = true) {
     } else {
       state.activeGovernance = null
     }
+    if (n(baseline.pending_amendment_id) > 0) {
+      state.pendingAmendment = await readAmendment(baseline.baseline_id, baseline.pending_amendment_id)
+    } else {
+      state.pendingAmendment = null
+    }
     state.notice = null
   } catch (error) {
     state.baseline = null
@@ -515,11 +574,12 @@ async function handleProposal(event) {
   event.preventDefault()
   if (!state.baseline) return
   const candidate = document.querySelector('#candidateClause')?.value || ''
-  if (!candidate.trim()) return
+  if (!pyStrip(candidate)) return
 
   const baselineId = n(state.baseline.baseline_id)
   let before = null
   try {
+    assertTextBudget(candidate, 'Governance clause')
     state.busy = true
     const { account, client } = await connectWallet()
     state.account = account
@@ -541,6 +601,9 @@ async function handleProposal(event) {
 
     const after = await readBaseline(baselineId)
     state.baseline = after
+    state.pendingAmendment = n(after.pending_amendment_id) > 0
+      ? await readAmendment(baselineId, after.pending_amendment_id)
+      : null
 
     if (final.outcome.ok === false) {
       const rollback = verifyRollbackPostcondition(before, after)
@@ -578,6 +641,110 @@ async function handleProposal(event) {
       }
     } catch {
       state.tx = { phase: 'rollback', label: `Baseline #${baselineId}`, title: 'Write failed', message: cleanError(error) }
+    }
+  } finally {
+    state.busy = false
+    render()
+  }
+}
+
+async function handleProposeAmendment(event) {
+  event.preventDefault()
+  if (!state.baseline) return
+  const text = document.querySelector('#amendmentText')?.value || ''
+  if (!pyStrip(text)) return
+
+  const baselineId = n(state.baseline.baseline_id)
+  let before = null
+  try {
+    assertTextBudget(text, 'Amendment')
+    state.busy = true
+    const { account, client } = await connectWallet()
+    state.account = account
+    before = await readBaseline(baselineId)
+    const hash = await submitWrite(client, 'propose_amendment', [baselineId, text])
+    state.tx = { phase: 'submitted', label: `Baseline #${baselineId}`, title: 'Amendment submitted', message: 'Waiting for finalization and execution evidence.', hash }
+    render()
+
+    const final = await waitForAuthoritativeExecution(hash, ({ message }) => {
+      state.tx = { ...state.tx, phase: 'pending', title: 'Confirmation in progress', message }
+      render()
+    })
+    if (final.outcome.ok === null) {
+      state.tx = { ...state.tx, phase: 'delayed', title: 'Confirmation delayed', message: final.reason }
+      return
+    }
+
+    const after = await readBaseline(baselineId)
+    state.baseline = after
+    if (final.outcome.ok === false) {
+      const rollback = verifyRollbackPostcondition(before, after)
+      state.tx = { ...state.tx, phase: 'rollback', title: rollback.ok ? 'Rollback confirmed' : 'State review required', message: final.reason, detail: rollback.message }
+      return
+    }
+
+    const amendment = await readAmendment(baselineId, after.pending_amendment_id)
+    state.pendingAmendment = amendment
+    const post = verifyAmendmentProposalPostcondition(before, after, amendment, pyStrip(text))
+    state.tx = { ...state.tx, phase: post.ok ? 'verified' : 'delayed', title: post.ok ? 'Amendment proposal verified' : 'Amendment postcondition mismatch', message: post.message }
+  } catch (error) {
+    try {
+      const after = before ? await readBaseline(baselineId) : null
+      const rollback = before && after ? verifyRollbackPostcondition(before, after) : null
+      state.baseline = after || state.baseline
+      state.tx = { phase: 'rollback', label: `Baseline #${baselineId}`, title: rollback?.ok ? 'Write rejected · rollback confirmed' : 'Write failed', message: cleanError(error), detail: rollback?.message || '' }
+    } catch {
+      state.tx = { phase: 'rollback', label: `Baseline #${baselineId}`, title: 'Write failed', message: cleanError(error) }
+    }
+  } finally {
+    state.busy = false
+    render()
+  }
+}
+
+async function handleApproveAmendment() {
+  if (!state.baseline || !state.pendingAmendment) return
+  const baselineId = n(state.baseline.baseline_id)
+  const amendmentId = n(state.pendingAmendment.amendment_id)
+  let before = null
+  try {
+    state.busy = true
+    const { account, client } = await connectWallet()
+    state.account = account
+    before = await readBaseline(baselineId)
+    const hash = await submitWrite(client, 'approve_amendment', [baselineId, amendmentId])
+    state.tx = { phase: 'submitted', label: `Amendment #${amendmentId}`, title: 'Counterparty approval submitted', message: 'Waiting for finalization and execution evidence.', hash }
+    render()
+
+    const final = await waitForAuthoritativeExecution(hash, ({ message }) => {
+      state.tx = { ...state.tx, phase: 'pending', title: 'Confirmation in progress', message }
+      render()
+    })
+    if (final.outcome.ok === null) {
+      state.tx = { ...state.tx, phase: 'delayed', title: 'Confirmation delayed', message: final.reason }
+      return
+    }
+
+    const after = await readBaseline(baselineId)
+    state.baseline = after
+    if (final.outcome.ok === false) {
+      const rollback = verifyRollbackPostcondition(before, after)
+      state.tx = { ...state.tx, phase: 'rollback', title: rollback.ok ? 'Rollback confirmed' : 'State review required', message: final.reason, detail: rollback.message }
+      return
+    }
+
+    const amendment = await readAmendment(baselineId, amendmentId)
+    const post = verifyAmendmentApprovalPostcondition(before, after, amendment, account)
+    state.pendingAmendment = null
+    state.tx = { ...state.tx, phase: post.ok ? 'verified' : 'delayed', title: post.ok ? 'Amendment is effective' : 'Approval postcondition mismatch', message: post.message }
+  } catch (error) {
+    try {
+      const after = before ? await readBaseline(baselineId) : null
+      const rollback = before && after ? verifyRollbackPostcondition(before, after) : null
+      state.baseline = after || state.baseline
+      state.tx = { phase: 'rollback', label: `Amendment #${amendmentId}`, title: rollback?.ok ? 'Approval rejected · rollback confirmed' : 'Approval failed', message: cleanError(error), detail: rollback?.message || '' }
+    } catch {
+      state.tx = { phase: 'rollback', label: `Amendment #${amendmentId}`, title: 'Approval failed', message: cleanError(error) }
     }
   } finally {
     state.busy = false

@@ -139,8 +139,11 @@ textarea:focus, input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px r
 .status-pill.good { background: #dff1e9; color: var(--green); }
 .status-pill.bad { background: #f3dedb; color: var(--red); }
 .status-pill.warn { background: #f5ead1; color: #906420; }
-.baseline-card blockquote { margin: 28px 0; padding: 0; font-family: 'Instrument Serif'; font-size: 29px; line-height: 1.1; }
-.baseline-stats { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.text-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 26px 0; }
+.text-pair > div { border: 1px solid var(--line); border-radius: 14px; padding: 16px; min-width: 0; }
+.text-pair small { font-family: 'DM Mono'; color: var(--blue); font-size: 7px; letter-spacing: .1em; }
+.baseline-card blockquote { margin: 14px 0 0; padding: 0; font-family: 'Instrument Serif'; font-size: 25px; line-height: 1.12; overflow-wrap: anywhere; }
+.baseline-stats { display: grid; grid-template-columns: repeat(6, 1fr); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
 .baseline-stats span { padding: 14px; border-right: 1px solid var(--line); }
 .baseline-stats span:last-child { border-right: 0; }
 .baseline-stats small { display: block; font-family: 'DM Mono'; font-size: 6px; color: var(--muted); letter-spacing: .08em; }
@@ -150,6 +153,11 @@ textarea:focus, input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px r
 .active-rule small { font-family: 'DM Mono'; font-size: 7px; color: var(--blue); letter-spacing: .1em; }
 .active-rule p { margin: 7px 0 0; font-size: 11px; line-height: 1.45; }
 .proposal-foot { margin-bottom: 0; margin-top: 18px; }
+.amendment-panel { border: 1px solid var(--line); border-radius: 20px; background: var(--paper-2); padding: 26px; }
+.pending-amendment { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 18px; }
+.pending-amendment small { font-family: 'DM Mono'; color: var(--blue); font-size: 7px; letter-spacing: .08em; }
+.pending-amendment p { margin: 10px 0 0; font-size: 14px; line-height: 1.55; }
+.amendment-panel .boundary-note { margin-top: 20px; }
 .legend-row { display: grid; grid-template-columns: 36px 1fr; gap: 12px; padding: 17px 0; border-bottom: 1px solid var(--line); }
 .legend-row i { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 17px; }
 .legend-row.good i { background: #dff1e9; color: var(--green); }
@@ -261,9 +269,11 @@ textarea:focus, input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px r
   .metric-strip article { border-right: 0; border-bottom: 1px solid var(--line); }
   .metric-strip article:last-child { border-bottom: 0; }
   .compact-heading h1 { font-size: 58px; }
+  .text-pair { grid-template-columns: 1fr; }
   .baseline-stats { grid-template-columns: 1fr 1fr; }
-  .baseline-stats span:nth-child(2) { border-right: 0; }
-  .baseline-stats span:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .baseline-stats span:nth-child(2n) { border-right: 0; }
+  .baseline-stats span:nth-child(-n+4) { border-bottom: 1px solid var(--line); }
+  .pending-amendment { grid-template-columns: 1fr; align-items: stretch; }
   .audit-controls { grid-template-columns: 1fr 1fr; }
   .audit-controls .button { grid-column: 1 / -1; }
   .attempt-row { grid-template-columns: 34px 34px 1fr; padding: 12px 0; }

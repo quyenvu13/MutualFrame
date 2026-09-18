@@ -1,6 +1,12 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/api/rpc",
+      "destination": "https://studio.genlayer.com/api"
+    }
+  ],
   "headers": [
     {
       "source": "/src/(.*)",

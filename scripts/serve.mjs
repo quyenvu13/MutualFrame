@@ -3,22 +3,18 @@ import { readFile, stat } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const root = fileURLToPath(new URL('..', import.meta.url))
+const projectRoot = fileURLToPath(new URL('..', import.meta.url))
+const root = resolve(projectRoot, 'dist')
 const port = Number(process.env.PORT || 4173)
 const host = process.env.HOST || '127.0.0.1'
+const upstream = 'https://studio.genlayer.com/api'
 
 const types = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
   '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.ico': 'image/x-icon',
   '.txt': 'text/plain; charset=utf-8',
 }
 
@@ -31,20 +27,42 @@ function safePath(urlPath) {
   return full
 }
 
+async function proxyRpc(req, res) {
+  const chunks = []
+  for await (const chunk of req) chunks.push(chunk)
+  const body = Buffer.concat(chunks)
+  const response = await fetch(upstream, {
+    method: req.method || 'POST',
+    headers: {
+      'content-type': req.headers['content-type'] || 'application/json',
+      'accept': 'application/json',
+      'user-agent': req.headers['user-agent'] || 'Mozilla/5.0 MutualFrame/1.4',
+    },
+    body: body.length ? body : undefined,
+  })
+  const payload = Buffer.from(await response.arrayBuffer())
+  res.writeHead(response.status, {
+    'content-type': response.headers.get('content-type') || 'application/json',
+    'cache-control': 'no-store',
+  })
+  res.end(payload)
+}
+
 const server = http.createServer(async (req, res) => {
   try {
-    let file = safePath(req.url)
-    if (!file) {
-      res.writeHead(403).end('Forbidden')
+    if ((req.url || '').split('?')[0] === '/api/rpc') {
+      await proxyRpc(req, res)
       return
     }
+
+    let file = safePath(req.url)
+    if (!file) return res.writeHead(403).end('Forbidden')
 
     let info
     try {
       info = await stat(file)
     } catch {
-      res.writeHead(404).end('Not found')
-      return
+      return res.writeHead(404).end('Not found')
     }
     if (info.isDirectory()) file = resolve(file, 'index.html')
 
@@ -55,12 +73,12 @@ const server = http.createServer(async (req, res) => {
     })
     res.end(body)
   } catch (error) {
-    res.writeHead(500).end('Server error')
+    res.writeHead(502).end('Proxy or server error')
     console.error(error)
   }
 })
 
 server.listen(port, host, () => {
-  console.log(`MutualFrame local server: http://localhost:${port}`)
-  console.log('Press Ctrl+C to stop.')
+  console.log(`MutualFrame local server: http://${host}:${port}`)
+  console.log('Production bundle + same-origin StudioNet RPC proxy are active.')
 })

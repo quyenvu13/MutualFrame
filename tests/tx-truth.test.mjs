@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   executionOutcome,
   rawLeaderExecution,
+  verifyAmendmentApprovalPostcondition,
+  verifyAmendmentProposalPostcondition,
   verifyProposalPostcondition,
   verifyRollbackPostcondition,
 } from '../src/tx-truth.js'
@@ -51,7 +53,24 @@ test('direct rewrite blocks without replacing active governance', () => {
 })
 
 test('rollback proof requires every protected counter and active version to remain unchanged', () => {
-  const before = { active_governance_id: 1, active_version: 1, version_count: 1, attempt_count: 4, unilateral_power_blocks: 2, out_of_scope_blocks: 1 }
+  const before = { active_governance_id: 1, active_version: 1, version_count: 1, attempt_count: 4, unilateral_power_blocks: 2, out_of_scope_blocks: 1, model_calls: 3, amendment_count: 1, pending_amendment_id: 0, effective_amendment_id: 1, effective_version: 1 }
   assert.equal(verifyRollbackPostcondition(before, { ...before }).ok, true)
   assert.equal(verifyRollbackPostcondition(before, { ...before, attempt_count: 5 }).ok, false)
+  assert.equal(verifyRollbackPostcondition(before, { ...before, pending_amendment_id: 2 }).ok, false)
+})
+
+test('amendment proposal must be pinned without changing effective state', () => {
+  const before = { baseline_id: 4, active_governance_id: 9, amendment_count: 1, effective_version: 2 }
+  const after = { ...before, amendment_count: 2, pending_amendment_id: 12 }
+  const amendment = { amendment_id: 12, baseline_id: 4, governance_id: 9, base_effective_version: 2, text: 'Revised record.', status: 'PENDING' }
+  assert.equal(verifyAmendmentProposalPostcondition(before, after, amendment, 'Revised record.').ok, true)
+  assert.equal(verifyAmendmentProposalPostcondition(before, { ...after, effective_version: 3 }, amendment, 'Revised record.').ok, false)
+})
+
+test('amendment approval must advance effective state exactly once', () => {
+  const before = { effective_version: 2 }
+  const after = { pending_amendment_id: 0, effective_amendment_id: 12, effective_version: 3, effective_text: 'Revised record.' }
+  const amendment = { amendment_id: 12, status: 'APPROVED', approved_by: '0xabc', text: 'Revised record.' }
+  assert.equal(verifyAmendmentApprovalPostcondition(before, after, amendment, '0xAbC').ok, true)
+  assert.equal(verifyAmendmentApprovalPostcondition(before, { ...after, effective_version: 4 }, amendment, '0xAbC').ok, false)
 })

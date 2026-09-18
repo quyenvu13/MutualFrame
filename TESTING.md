@@ -1,230 +1,91 @@
-# MutualFrame — Testing
+# MutualFrame v1.4 testing
 
-## Frozen Project identity
+## Local gates executed
 
-```text
-Project                  MutualFrame
-Contract class           UnilateralChangeGuard
-Version                  1.3
-Network                  GenLayer StudioNet
-Project address          0xD106722B17ac4bb888A14a0e14114bD052Ca6105
-Frozen source SHA-256    675dcba2f55a34c4682d3f2ea05dae9fcb0d8620ceb620d1a1c13c3fef76e901
-```
+| Gate | Command | Expected |
+|---|---|---|
+| Frontend/unit tests | `npm test` | Node tests and direct production-contract tests pass |
+| Production bundle | `npm run build` | `dist/assets/main.js` and `dist/assets/styles.css` exist |
+| Package audit | `npm run verify` | Tests, build, hash, hygiene, wiring, and docs pass |
+| Frozen source | `sha256sum contract/MutualFrame.py` | `85aa2ace5b9cf1186743e9d710f58e4263709428e8ab690a3b664af33f78dfc1` |
 
-Explorer:
+The final command outputs are summarized in `RUNTIME_EVIDENCE.md`. StudioNet runtime gates remain separate and must not be marked complete from offline results.
 
-```text
-https://explorer-studio.genlayer.com/address/0xD106722B17ac4bb888A14a0e14114bD052Ca6105
-```
+## New blind runtime vectors
 
-Deployment evidence:
+These sentences are not embedded as examples in the Intelligent Contract prompt.
 
-```text
-Tx: 0xb8350999a75a4b34eee3095fdafe7e3f7c0e6f5926e83dff5c7f995aedfd484c
-Status: FINALIZED
-GenVM Result: SUCCESS
-Consensus Result: Accepted
-```
+| Purpose | Text |
+|---|---|
+| Baseline | `Museum image files stay downloadable for eighteen months.` |
+| One-sided rule | `The archive owner can shorten that period independently; the visitor learns about it afterward.` |
+| Two-party rule | `A different schedule begins only when the archive owner and visitor separately confirm it.` |
+| Direct rewrite | `Museum image files stay downloadable for six months.` |
+| Concrete amendment | `Museum image files stay downloadable for twelve months.` |
 
-## Executed local gates
+Keep every submitted text under the measured calldata limit. Until the probe is run, the UI uses a conservative 150 UTF-8-byte guard.
 
-Run:
+## Exact runtime path — deployed v1.4 Project
 
-```bash
-npm run verify
-```
+Use three distinct wallets: authority, immutable counterparty, and outsider. Perform one state-changing transaction at a time. Stop immediately on any mismatch.
 
-The verifier executes:
+1. Open Project `0x00B1cFb4cdd08A09097A5344668E1914031eb96F` and call `get_config()`.
+   - Verified: version `1.4`, model-call cap `8`, all counters zero.
+   - CẦN SNAP: KHÔNG CẦN.
+2. Authority calls `create_baseline(baseline, counterparty)`.
+   - Expected: baseline #1 binds both wallets, model calls 0, effective version 0.
+   - CẦN SNAP: KHÔNG CẦN.
+3. Authority calls `propose_amendment(1, concrete_amendment)` before governance.
+   - Expected: explicit execution error `Mutual governance is not active`; every protected field unchanged.
+   - CẦN SNAP: KHÔNG CẦN.
+4. Authority calls `propose_governance(1, one_sided_rule)`.
+   - Expected: blocked, attempt +1, unilateral block +1, active governance remains 0.
+   - CẦN SNAP: KHÔNG CẦN.
+5. Authority calls `propose_governance(1, two_party_rule)`.
+   - Expected: accepted, governance version 1 activates.
+   - CẦN SNAP: KHÔNG CẦN.
+6. Authority repeats `propose_amendment(1, concrete_amendment)`.
+   - Expected: same call now succeeds and creates one pending amendment pinned to governance 1/effective version 0.
+   - CẦN SNAP: KHÔNG CẦN.
+7. Outsider calls `approve_amendment(1, amendment_id)`.
+   - Expected: explicit execution error; pending and effective state unchanged.
+   - CẦN SNAP: KHÔNG CẦN.
+8. Counterparty calls the same `approve_amendment`.
+   - Expected: status approved, effective version 1, effective text equals the amendment.
+   - CẦN SNAP: KHÔNG CẦN.
+9. Authority submits a case/whitespace variant of the one-sided rule.
+   - Expected: `used_cache = true`; `model_calls` does not increase.
+   - CẦN SNAP: KHÔNG CẦN.
+10. Authority submits the direct rewrite vector.
+    - Expected: blocked as direct change; active governance/effective text unchanged.
+    - CẦN SNAP: KHÔNG CẦN.
+11. Create another pending amendment, then accept a newer two-party governance rule.
+    - Expected: pending amendment becomes `STALE`; its later approval rolls back.
+    - CẦN SNAP: KHÔNG CẦN.
+12. Fetch deployed source, normalize only CRLF/LF and one optional terminal newline, and compare SHA-256 with the repository.
+    - Expected: exact parity with `SOURCE_SHA256.txt`.
+    - CẦN SNAP: KHÔNG CẦN.
 
-```text
-transaction execution-truth parsing tests
-proposal postcondition tests for all 3 semantic verdicts
-rollback/no-write comparison test
-production static bundle build
-frozen source SHA-256 check
-Project-address pin check
-public-package hygiene scan
-reviewer-facing file presence check
-```
+For every transaction, record wallet, method, exact arguments, transaction hash, consensus status, leader execution result, and observed postcondition in `RUNTIME_EVIDENCE.md`.
 
-The frontend forms are empty by default. No demo transaction payload is prefilled.
+## Calldata boundary
 
-## Project-deployment runtime status
-
-The fresh Project deployment is externally visible with a successful finalized deploy transaction.
-
-A local-browser smoke run was also executed against `0xD106...6105` with a connected StudioNet wallet:
-
-```text
-wallet connection                    observed
-baseline #1 creation                 observed
-baseline_count                       1
-mutual governance proposal           observed
-active_version                       1
-attempt_count                        1
-governance_count                     1
-active governance text               matched the submitted mutual-control clause
-```
-
-This is **Project frontend smoke evidence**, not a complete address-specific transaction archive. The write transaction hashes were not added to this package, and the remaining unilateral/direct-rewrite/cache/outsider paths below have not been rerun on the Project address. Full contract behavioral coverage was executed on the separately submitted Intelligent Contract deployment, but that evidence is not substituted for Project-address proof.
-
-Byte-level deployed-source parity is also **PENDING** until independently re-fetched from the deployed Project instance.
-
-## Exact runtime path for Project verification
-
-Use the fresh Project deployment only.
-
-### 1 — Read config
-
-Call `get_config()` or load the app Overview.
-
-Expected:
+Run the read-only estimator after deployment:
 
 ```text
-name = UnilateralChangeGuard
-version = 1.3
-semantic verdicts =
-  MUTUAL_CHANGE_CONTROL
-  UNILATERAL_CHANGE_POWER
-  OUT_OF_SCOPE_DIRECT_CHANGE
-max_governance_versions = 20
-max_attempts_per_baseline = 100
+set CONTRACT_ADDRESS=0x...
+set PROBE_FROM=0x...
+set PROBE_COUNTERPARTY=0x...
+npm run probe:calldata
 ```
 
-### 2 — Create baseline
+The probe must show mixed accepted/rejected lengths for both methods. Record the largest accepted UTF-8 byte length and the first rejected length. It does not sign or send transactions.
 
-Connect Wallet 1 and create:
+## What this run does NOT prove
 
-```text
-Service includes 24/7 critical incident support.
-```
-
-Expected post-state for the new baseline:
-
-```text
-active_governance_id = 0
-active_version = 0
-version_count = 0
-attempt_count = 0
-unilateral_power_blocks = 0
-out_of_scope_blocks = 0
-```
-
-### 3 — Block unilateral future power
-
-Wallet 1 proposes:
-
-```text
-The Provider may adjust the support scope to reflect operational changes and notify the customer after the new scope is applied.
-```
-
-Expected:
-
-```text
-verdict = UNILATERAL_CHANGE_POWER
-accepted = false
-resulting_governance_id = 0
-used_cache = false
-```
-
-Active governance must remain unset.
-
-### 4 — Activate mutual change control
-
-Wallet 1 proposes:
-
-```text
-A revised support scope takes effect only after both parties record approval of the new version.
-```
-
-Expected:
-
-```text
-verdict = MUTUAL_CHANGE_CONTROL
-accepted = true
-resulting_governance_id > 0
-active_version = 1
-version_count = 1
-```
-
-### 5 — Block direct rewrite
-
-Wallet 1 proposes:
-
-```text
-24/7 support applies only to Enterprise customers.
-```
-
-Expected:
-
-```text
-verdict = OUT_OF_SCOPE_DIRECT_CHANGE
-accepted = false
-resulting_governance_id = 0
-```
-
-The mutual governance version from step 4 must remain active.
-
-### 6 — Cache hit
-
-Submit the exact step-3 unilateral candidate again.
-
-Expected latest attempt:
-
-```text
-verdict = UNILATERAL_CHANGE_POWER
-accepted = false
-used_cache = true
-```
-
-### 7 — Outsider rollback
-
-Switch to Wallet 2, which is not the baseline authority, and call `propose_governance` for the same baseline.
-
-Expected execution:
-
-```text
-ERROR / rollback
-Only the baseline authority may propose governance
-```
-
-Read the baseline again. `attempt_count`, active governance, version count and both block counters must be unchanged from their pre-transaction values.
-
-## Frontend verification
-
-After deployment to Vercel, check:
-
-```text
-[ ] page loads without stale/demo data
-[ ] Project address is 0xD106722B17ac4bb888A14a0e14114bD052Ca6105
-[ ] get_config reads v1.3
-[ ] wallet connect/switch works on StudioNet
-[ ] create form starts empty
-[ ] governance form starts empty
-[ ] submitted/pending state is not shown as success
-[ ] success appears only after execution + postcondition proof
-[ ] expected rollback refreshes and proves unchanged baseline state
-[ ] Attempt log shows accepted/blocked and used_cache correctly
-[ ] mobile layout remains usable
-[ ] Explorer links resolve to the Project deployment/transactions
-```
-
-## Evidence discipline
-
-For every successful Project transaction retain:
-
-```text
-full tx hash
-caller wallet/role
-method + exact parameters
-consensus/finalization state
-explicit execution result or leader-receipt evidence
-post-transaction contract reads
-expected vs actual postcondition
-```
-
-For every expected rollback retain the execution error/reason plus a post-rollback read proving the protected baseline state is unchanged.
-
-## Attempt-log read path
-
-The reviewer UI reads `get_baseline(baseline_id)` first and treats its `attempt_count` as the authoritative upper bound. It then calls `get_attempt(baseline_id, attempt_id)` only for IDs that are known to exist in the requested range, loads them together, validates returned baseline/attempt IDs, and only then renders the history. The UI does not probe non-existent attempt IDs and does not depend on the bulk `get_attempts` response shape. This changes only frontend reading behavior; the frozen contract is unchanged.
+- Offline stubs do not prove GenVM v0.2 deployment compatibility, TreeMap persistence, or nondeterministic validator behavior.
+- Mutation tests prove that local regression gates detect removed controls; they do not replace StudioNet runtime evidence.
+- A successful build does not prove MetaMask switching, proxy behavior, explorer availability, or Vercel deployment.
+- Repository/deployment byte parity is verified by exact SHA-256 match.
+- Until all three wallets execute the path above with hashes, authorization and stale/replay branches are only locally covered.
+- The calldata boundary is `PENDING` until `eth_estimateGas` results are captured against the fresh deployment.
