@@ -13,4 +13,4 @@ Use this protocol to prevent prompt/test leakage and confirmation bias.
 9. If bytes or prompt change, discard the evidence and start again with new vectors.
 10. Keep the final vectors in `TESTING.md`, never in the contract prompt.
 
-Current v1.4 vectors are defined in `TESTING.md`; runtime execution is `PENDING`.
+Current v1.4 vectors are defined in `TESTING.md`. The load-bearing two-party path is runtime verified on the pinned Project deployment; extended outsider, cache-variant and stale/replay StudioNet vectors remain explicitly unclaimed and are covered by tracked direct production-contract tests.

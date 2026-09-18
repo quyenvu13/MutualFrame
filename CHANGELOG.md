@@ -5,6 +5,9 @@
 - Pinned the verified StudioNet Project address `0x00B1cFb4cdd08A09097A5344668E1914031eb96F`.
 - Verified deploy finalization, GenVM success, accepted consensus, zero-state `get_config()`, and exact deployed-source SHA-256 parity.
 - Updated Explorer links to `explorer-studio.genlayer.com`.
+- Recorded the verified load-bearing browser path and live frontend URL.
+- Replaced the hard-coded deployment `PENDING` badge with a live `get_config()` verification state.
+- Refreshes global counters after every completed write, so reviewers no longer need to reload the page.
 
 ## 1.4.1 — 2026-09-18
 

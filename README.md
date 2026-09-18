@@ -15,7 +15,7 @@ MutualFrame is a StudioNet Intelligent Contract and browser Project for governin
 | Project address | `0x00B1cFb4cdd08A09097A5344668E1914031eb96F` |
 | Deploy status | `FINALIZED / SUCCESS / Accepted` |
 | Deployed-source parity | **PASS — exact SHA-256 match** |
-| Frontend URL | **PENDING — publish this configured build** |
+| Frontend URL | `https://mutual-frame.vercel.app/` |
 
 `src/config.js` is pinned to the StudioNet Project deployment above. The Explorer source hashes to the same frozen SHA-256 as `contract/MutualFrame.py`.
 
@@ -77,7 +77,7 @@ The probe calls `eth_estimateGas` for `create_baseline` and `propose_governance`
 ## Honest limitations
 
 - Semantic consensus classifies change-control structure; it does not judge commercial fairness or prove off-chain compliance.
-- The deployment, Explorer availability, `get_config()` read, and deployed-source parity are verified. Three-wallet behavioral evidence, calldata limits, and hosted-frontend smoke remain pending.
+- Deployment, Explorer availability, `get_config()` reads, deployed-source parity, hosted-frontend smoke, and the load-bearing two-party flow are verified. The live Project state records one immutable baseline, one activated mutual-governance rule, one effective amendment, and the ordered blocked/activated attempt log. Extended outsider, cache-variant, stale/replay runtime vectors and calldata limits remain explicitly unclaimed; their deterministic behavior is covered by the tracked direct production-contract tests.
 - Concurrent baseline creation can make the inferred newest ID ambiguous. The UI detects this with before/after counters and reports a postcondition mismatch instead of claiming success.
 - The 150-byte frontend guard is conservative until the fresh deployment is probed.
 

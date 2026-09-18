@@ -339,6 +339,16 @@ function renderAttemptRow(a) {
 }
 
 function verificationPage() {
+  const liveVersion = state.config ? String(state.config.version || '') : ''
+  const expectedVersion = String(CONTRACT_VERSION)
+  const deploymentLabel = state.configError
+    ? 'PROJECT DEPLOYMENT · LIVE READ UNAVAILABLE'
+    : !state.config
+      ? 'PROJECT DEPLOYMENT · CHECKING LIVE CONTRACT'
+      : liveVersion === expectedVersion
+        ? 'PROJECT DEPLOYMENT · LIVE READ VERIFIED'
+        : 'PROJECT DEPLOYMENT · VERSION MISMATCH'
+
   return `
     <section class="page-heading compact-heading">
       <div><div class="eyebrow">PROOF · REVIEWER SURFACE</div><h1>Verify the gate.<br><em>Not the marketing.</em></h1></div>
@@ -346,7 +356,7 @@ function verificationPage() {
     </section>
     <section class="verification-grid">
       <article class="verify-card featured">
-        <small>PROJECT DEPLOYMENT · PENDING</small>
+        <small>${deploymentLabel}</small>
         <strong>${CONTRACT_ADDRESS}</strong>
         <div class="verify-line"><span>Network</span><b>${NETWORK_LABEL}</b></div>
         <div class="verify-line"><span>Contract class</span><b>${CONTRACT_CLASS}</b></div>
@@ -535,6 +545,7 @@ async function handleCreateBaseline(event) {
     state.tx = { phase: 'rollback', label: 'Create baseline', title: 'Write failed', message: cleanError(error) }
   } finally {
     state.busy = false
+    await refreshLiveConfig()
     render()
   }
 }
@@ -644,6 +655,7 @@ async function handleProposal(event) {
     }
   } finally {
     state.busy = false
+    await refreshLiveConfig()
     render()
   }
 }
@@ -698,6 +710,7 @@ async function handleProposeAmendment(event) {
     }
   } finally {
     state.busy = false
+    await refreshLiveConfig()
     render()
   }
 }
@@ -748,6 +761,7 @@ async function handleApproveAmendment() {
     }
   } finally {
     state.busy = false
+    await refreshLiveConfig()
     render()
   }
 }
@@ -811,17 +825,21 @@ async function inspectAttempt(attemptId) {
   render()
 }
 
-async function bootstrap() {
-  render()
-  try {
-    state.account = await currentWallet()
-  } catch {}
+async function refreshLiveConfig() {
   try {
     state.config = await readConfig()
     state.configError = ''
   } catch (error) {
     state.configError = cleanError(error)
   }
+}
+
+async function bootstrap() {
+  render()
+  try {
+    state.account = await currentWallet()
+  } catch {}
+  await refreshLiveConfig()
   render()
 }
 
